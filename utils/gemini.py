@@ -1,6 +1,5 @@
-from google import genai
-from google.genai import types
-from google.genai import errors as genai_errors
+import google.generativeai as genai
+from google.generativeai import types
 import streamlit as st
 
 MODEL_NAME = "gemini-2.5-flash"
