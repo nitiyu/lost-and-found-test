@@ -7,7 +7,7 @@ from db.postgres import init_db_postgres, get_pg_conn
 from db.insert import add_found_item_postgres
 from db.search import search_found_items_postgres
 from utils.embedding import get_openai_embedding
-from utils.gemini_helpers import (
+from utils.gemini import (
     gemini_available,
     create_operator_chat,
     create_user_chat,
@@ -15,8 +15,7 @@ from utils.gemini_helpers import (
     standardize_description,
     extract_field,
 )
-from helpers.tags import load_tag_data
-from helpers.validation import validate_phone, validate_email
+from utils.helpers import load_tag_data, validate_phone, validate_email
 
 # Ensure DB initialized
 if st.secrets.get("PG_CONNECTION_STRING"):
