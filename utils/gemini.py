@@ -121,3 +121,22 @@ def standardize_description(text: str, tags: dict) -> dict:
     for key in ["subway_location", "color", "item_type"]:
         if key in data and isinstance(data[key], str):
             data[key] = [data[key]]
+        elif key not in data:
+            data[key] = []
+
+    # Default fallback values
+    if "item_category" not in data:
+        data["item_category"] = "null"
+    if "description" not in data:
+        data["description"] = ""
+
+    return data
+
+
+# -----------------------------
+# Extract a field from structured text
+# -----------------------------
+def extract_field(text: str, field: str) -> str:
+    import re
+    m = re.search(rf"{field}:\s*(.*)", text)
+    return m.group(1).strip() if m else "null"
