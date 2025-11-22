@@ -1,142 +1,54 @@
 from google import genai
 from google.genai import types
-import streamlit as st
-import json as _json
-from datetime import datetime, timezone
+import os
 
-MODEL_NAME = "gemini-2.5-flash"
-
-
-# -----------------------------
-# Gemini API initialization
-# -----------------------------
 def gemini_available() -> bool:
-    return bool(st.secrets.get("GEMINI_API_KEY"))
+    return bool(os.environ.get("GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY"))
 
+# Shared client (new SDK)
+client = genai.Client()
 
-def get_gemini_client():
-    api_key = st.secrets.get("GEMINI_API_KEY")
-    if not api_key:
-        return None
-    return genai.Client(api_key=api_key)
-
-
-# -----------------------------
-# Operator Chat
-# -----------------------------
 def create_operator_chat():
-    client = get_gemini_client()
-    if client is None:
-        raise RuntimeError("Gemini not configured")
+    return client.chats.create(
+        model="gemini-2.5-flash",
+        history=[
+            types.Content(
+                role="system",
+                parts=[types.Part.from_text(
+                    "You are an AI assistant helping a subway worker record found items. "
+                    "Always output the final answer as a SINGLE structured JSON object only. "
+                )]
+            )
+        ]
+    )
 
-    system_prompt = st.secrets.get("GENERATOR_SYSTEM_PROMPT", "")
-
-    def send(message):
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=[
-                types.Content(role="system", parts=[types.Part.from_text(system_prompt)]),
-                types.Content(role="user", parts=[types.Part.from_text(message)])
-            ]
-        )
-        return response.text
-
-    return send
-
-
-# -----------------------------
-# User Chat
-# -----------------------------
 def create_user_chat():
-    client = get_gemini_client()
-    if client is None:
-        raise RuntimeError("Gemini not configured")
-
-    system_prompt = st.secrets.get("USER_SIDE_GENERATOR_PROMPT", "")
-
-    def send(message):
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=[
-                types.Content(role="system", parts=[types.Part.from_text(system_prompt)]),
-                types.Content(role="user", parts=[types.Part.from_text(message)])
-            ]
-        )
-        return response.text
-
-    return send
-
-
-# -----------------------------
-# Check structured record pattern
-# -----------------------------
-def is_structured_record(message: str) -> bool:
-    return message.strip().startswith("Subway Location:")
-
-
-# -----------------------------
-# Standardize description into JSON
-# -----------------------------
-def standardize_description(text: str, tags: dict) -> dict:
-    client = get_gemini_client()
-    if client is None:
-        raise RuntimeError("Gemini not configured")
-
-    system = st.secrets.get("STANDARDIZER_PROMPT", "")
-
-    tags_summary = (
-        "\n--- TAGS REFERENCE ---\n"
-        f"Subway Location tags: {', '.join(tags['locations'][:50])}\n"
-        f"Color tags: {', '.join(tags['colors'][:50])}\n"
-        f"Item Category tags: {', '.join(tags['categories'][:50])}\n"
-        f"Item Type tags: {', '.join(tags['item_types'][:50])}\n"
+    return client.chats.create(
+        model="gemini-2.0-flash",
+        history=[
+            types.Content(
+                role="system",
+                parts=[types.Part.from_text(
+                    "You help users report lost items. "
+                    "Always output the final answer as a SINGLE structured JSON object only. "
+                )]
+            )
+        ]
     )
 
-    full_prompt = (
-        system
-        + "\n\nHere is the structured input to standardize:\n"
-        + text
-        + tags_summary
-    )
+def is_structured_record(text: str) -> bool:
+    return text.strip().startswith("{") and text.strip().endswith("}")
 
-    resp = client.models.generate_content(
-        model=MODEL_NAME,
-        contents=[types.Content(role="user", parts=[types.Part.from_text(full_prompt)])]
-    )
-
-    cleaned = resp.text.strip()
-
-    # Extract JSON
-    json_start = cleaned.find("{")
-    json_end = cleaned.rfind("}") + 1
-    json_text = cleaned[json_start:json_end]
-
-    data = _json.loads(json_text)
-
-    # Insert or fix time
-    if "time" not in data or not data["time"]:
-        data["time"] = datetime.now(timezone.utc).isoformat()
-
-    # Ensure list fields exist
-    for key in ["subway_location", "color", "item_type"]:
-        if key in data and isinstance(data[key], str):
-            data[key] = [data[key]]
-        elif key not in data:
-            data[key] = []
-
-    # Default fallback values
-    if "item_category" not in data:
-        data["item_category"] = "null"
-    if "description" not in data:
-        data["description"] = ""
-
-    return data
-
-
-# -----------------------------
-# Extract a field from structured text
-# -----------------------------
 def extract_field(text: str, field: str) -> str:
     import re
-    m = re.search(rf"{field}:\s*(.*)", text)
-    return m.group(1).strip() if m else "null"
+    pattern = rf"{field}\s*:\s*(.*)"
+    m = re.search(pattern, text)
+    return m.group(1).strip() if m else ""
+
+def standardize_description(text: str, tags: dict):
+    import json
+    try:
+        return json.loads(text)
+    except:
+        return None
+
