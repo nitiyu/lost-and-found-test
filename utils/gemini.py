@@ -1,9 +1,8 @@
-import google.generativeai as genai
-from google.generativeai import types
+from google import genai
+from google.genai import types
 import streamlit as st
 import json as _json
 from datetime import datetime, timezone
-
 
 MODEL_NAME = "gemini-2.5-flash"
 
@@ -15,32 +14,29 @@ def gemini_available() -> bool:
     return bool(st.secrets.get("GEMINI_API_KEY"))
 
 
-def get_gemini_model():
-    """Returns a configured GenerativeModel instance."""
+def get_gemini_client():
     api_key = st.secrets.get("GEMINI_API_KEY")
     if not api_key:
         return None
-    
-    genai.configure(api_key=api_key)
-    return genai.GenerativeModel(MODEL_NAME)
+    return genai.Client(api_key=api_key)
 
 
 # -----------------------------
 # Operator Chat
 # -----------------------------
 def create_operator_chat():
-    model = get_gemini_model()
-    if model is None:
+    client = get_gemini_client()
+    if client is None:
         raise RuntimeError("Gemini not configured")
 
     system_prompt = st.secrets.get("GENERATOR_SYSTEM_PROMPT", "")
 
-    # Return a function that behaves like a chat message interface
     def send(message):
-        response = model.generate_content(
+        response = client.models.generate_content(
+            model=MODEL_NAME,
             contents=[
-                {"role": "system", "text": system_prompt},
-                {"role": "user", "text": message}
+                types.Content(role="system", parts=[types.Part.from_text(system_prompt)]),
+                types.Content(role="user", parts=[types.Part.from_text(message)])
             ]
         )
         return response.text
@@ -52,17 +48,18 @@ def create_operator_chat():
 # User Chat
 # -----------------------------
 def create_user_chat():
-    model = get_gemini_model()
-    if model is None:
+    client = get_gemini_client()
+    if client is None:
         raise RuntimeError("Gemini not configured")
 
     system_prompt = st.secrets.get("USER_SIDE_GENERATOR_PROMPT", "")
 
     def send(message):
-        response = model.generate_content(
+        response = client.models.generate_content(
+            model=MODEL_NAME,
             contents=[
-                {"role": "system", "text": system_prompt},
-                {"role": "user", "text": message}
+                types.Content(role="system", parts=[types.Part.from_text(system_prompt)]),
+                types.Content(role="user", parts=[types.Part.from_text(message)])
             ]
         )
         return response.text
@@ -81,8 +78,8 @@ def is_structured_record(message: str) -> bool:
 # Standardize description into JSON
 # -----------------------------
 def standardize_description(text: str, tags: dict) -> dict:
-    model = get_gemini_model()
-    if model is None:
+    client = get_gemini_client()
+    if client is None:
         raise RuntimeError("Gemini not configured")
 
     system = st.secrets.get("STANDARDIZER_PROMPT", "")
@@ -102,8 +99,11 @@ def standardize_description(text: str, tags: dict) -> dict:
         + tags_summary
     )
 
-    # Generate
-    resp = model.generate_content(full_prompt)
+    resp = client.models.generate_content(
+        model=MODEL_NAME,
+        contents=[types.Content(role="user", parts=[types.Part.from_text(full_prompt)])]
+    )
+
     cleaned = resp.text.strip()
 
     # Extract JSON
