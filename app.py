@@ -35,7 +35,7 @@ if not tag_data:
 
 # ------------------ Operator ------------------
 if page == "Upload Found Item (Operator)":
-    st.header("Operator: Upload Found Item (backend-only JSON + DB insert)")
+    st.header("Operator: Upload Found Item")
 
     if not gemini_available():
         st.info("Gemini not configured — automated description disabled.")
