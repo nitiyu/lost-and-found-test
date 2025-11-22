@@ -1,7 +1,9 @@
+# app.py
 from pathlib import Path
 import os
 import streamlit as st
 from PIL import Image
+import json
 
 from db.postgres import init_db_postgres, get_pg_conn
 from db.insert import add_found_item_postgres
@@ -17,7 +19,9 @@ from utils.gemini import (
 )
 from utils.helpers import load_tag_data, validate_phone, validate_email
 
-# Ensure DB initialized
+# ---------------------
+# Initialize Postgres DB
+# ---------------------
 if st.secrets.get("PG_CONNECTION_STRING"):
     try:
         init_db_postgres()
@@ -29,25 +33,26 @@ st.title("Lost & Found Intake — Postgres + pgvector + OpenAI")
 
 page = st.sidebar.radio("Go to", ["Upload Found Item (Operator)", "Report Lost Item (User)"])
 
+# ---------------------
+# Load tag data
+# ---------------------
 tag_data = load_tag_data()
 if not tag_data:
     st.stop()
 
-# ------------------ Operator ------------------
+# ---------------------
+# Operator Side
+# ---------------------
 if page == "Upload Found Item (Operator)":
     st.header("Operator: Upload Found Item")
 
     if not gemini_available():
         st.info("Gemini not configured — automated description disabled.")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        uploaded_image = st.file_uploader("Image of found item", type=["jpg","jpeg","png"]) 
-    #with col2:
-        #initial_text = st.text_input("Short description (optional)", placeholder="e.g., black backpack with NASA patch")
+    uploaded_image = st.file_uploader("Image of found item", type=["jpg","jpeg","png"])
 
     if st.button("Start Intake"):
-        if not uploaded_image: #and not initial_text
+        if not uploaded_image:
             st.error("Please upload an image.")
         else:
             message_content = ""
@@ -55,18 +60,20 @@ if page == "Upload Found Item (Operator)":
                 img = Image.open(uploaded_image).convert("RGB")
                 st.image(img, width=200)
                 message_content += "I have a photo of the found item. Here is my description based on what I see: "
-            #if initial_text:
-                #message_content += initial_text
 
-            # Create operator chat
-            try:
-                operator_chat = create_operator_chat()
-                response = operator_chat.send_message(message_content)
-                model_text = response.text
-            except Exception as e:
-                st.error(f"Error calling Gemini: {e}")
+            # Call Gemini
+            if gemini_available():
+                try:
+                    operator_chat = create_operator_chat()
+                    response = operator_chat.send_message(message_content)
+                    model_text = response.text
+                except Exception as e:
+                    st.error(f"Error calling Gemini: {e}")
+                    model_text = ""
+            else:
                 model_text = ""
 
+            # Check if structured record
             if is_structured_record(model_text):
                 structured_text = model_text
                 final_json = standardize_description(structured_text, tag_data)
@@ -93,7 +100,9 @@ if page == "Upload Found Item (Operator)":
                 st.info("Model did not emit a final structured record. Model output:")
                 st.code(model_text)
 
-# ------------------ User ------------------
+# ---------------------
+# User Side
+# ---------------------
 if page == "Report Lost Item (User)":
     st.header("User: Report Lost Item")
 
@@ -127,12 +136,15 @@ if page == "Report Lost Item (User)":
             if initial_text:
                 message_text += initial_text
 
-            try:
-                user_chat = create_user_chat()
-                response = user_chat.send_message(message_text)
-                model_text = response.text
-            except Exception as e:
-                st.error(f"Error calling Gemini: {e}")
+            if gemini_available():
+                try:
+                    user_chat = create_user_chat()
+                    response = user_chat.send_message(message_text)
+                    model_text = response.text
+                except Exception as e:
+                    st.error(f"Error calling Gemini: {e}")
+                    model_text = ""
+            else:
                 model_text = ""
 
             if is_structured_record(model_text):
@@ -177,6 +189,3 @@ Description: {extract_field(structured_text, 'Description')}
             else:
                 st.info("Model did not emit a final structured record. Model output:")
                 st.code(model_text)
-
-
-
