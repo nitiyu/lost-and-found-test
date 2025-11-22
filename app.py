@@ -42,21 +42,21 @@ if page == "Upload Found Item (Operator)":
 
     col1, col2 = st.columns(2)
     with col1:
-        uploaded_image = st.file_uploader("Image of found item (optional)", type=["jpg","jpeg","png"]) 
-    with col2:
-        initial_text = st.text_input("Short description (optional)", placeholder="e.g., black backpack with NASA patch")
+        uploaded_image = st.file_uploader("Image of found item", type=["jpg","jpeg","png"]) 
+    #with col2:
+        #initial_text = st.text_input("Short description (optional)", placeholder="e.g., black backpack with NASA patch")
 
     if st.button("Start Intake"):
-        if not uploaded_image and not initial_text:
-            st.error("Please upload an image or enter a short description.")
+        if not uploaded_image: #and not initial_text
+            st.error("Please upload an image.")
         else:
             message_content = ""
             if uploaded_image:
                 img = Image.open(uploaded_image).convert("RGB")
                 st.image(img, width=200)
                 message_content += "I have a photo of the found item. Here is my description based on what I see: "
-            if initial_text:
-                message_content += initial_text
+            #if initial_text:
+                #message_content += initial_text
 
             # Create operator chat
             try:
