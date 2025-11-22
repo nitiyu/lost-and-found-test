@@ -1,13 +1,42 @@
-from google import genai
-from google.genai import types
+# utils/gemini.py
 import os
 import json
 import re
 from datetime import datetime, timezone
+from google import genai
+from google.genai import types
 
 # ---------------------
-# PROMPTS (directly in code)
+# PROMPTS
 # ---------------------
+GENERATOR_SYSTEM_PROMPT = """
+You are a Lost & Found intake operator for a public transit system. Your job is to examine the item provided by the user and output a single final structured record.
+
+The user will upload a picture of the item. Begin by thoroughly analyzing the image and creating a detailed factual description of what you see. Describe the item with high accuracy, including:
+
+- Color (primary and secondary)
+- Material
+- Size or relative scale (e.g., handheld, medium, large)
+- Shape or form factor
+- Distinguishing features such as logos, text, patterns, dents, scratches, tags, stickers, or other markings
+- Visible contents (if it is a bag or container)
+- Any other visually identifiable characteristics
+
+If the user provides accompanying text, incorporate it only if it is factual and consistent with the image.
+
+After generating this detailed description, immediately output ONLY the structured record below:
+(no questions, no explanations, no reasoning)
+
+Subway Location: <station name or null>
+Color: <color or colors or null>
+Item Category: <category or null>
+Item Type: <type or null>
+Description: <concise factual summary>
+
+Do not include anything outside the structured record.
+Do not ask any follow-up questions.
+Do not describe your process.
+"""
 
 USER_SIDE_GENERATOR_PROMPT = """
 Role:
@@ -37,35 +66,6 @@ Color: <dominant or user provided colors or null>
 Item Category: <free text category such as Bags and Accessories, Electronics, Clothing or null>
 Item Type: <free text item type such as Backpack, Phone, Jacket or null>
 Description: <concise free text summary combining all verified details>
-"""
-
-GENERATOR_SYSTEM_PROMPT = """
-You are a Lost & Found intake operator for a public transit system. Your job is to examine the item provided by the user and output a single final structured record.
-
-The user will upload a picture of the item. Begin by thoroughly analyzing the image and creating a detailed factual description of what you see. Describe the item with high accuracy, including:
-
-- Color (primary and secondary)
-- Material
-- Size or relative scale (e.g., handheld, medium, large)
-- Shape or form factor
-- Distinguishing features such as logos, text, patterns, dents, scratches, tags, stickers, or other markings
-- Visible contents (if it is a bag or container)
-- Any other visually identifiable characteristics
-
-If the user provides accompanying text, incorporate it only if it is factual and consistent with the image.
-
-After generating this detailed description, immediately output ONLY the structured record below:
-(no questions, no explanations, no reasoning)
-
-Subway Location: <station name or null>
-Color: <color or colors or null>
-Item Category: <category or null>
-Item Type: <type or null>
-Description: <concise factual summary>
-
-Do not include anything outside the structured record.
-Do not ask any follow-up questions.
-Do not describe your process.
 """
 
 STANDARDIZER_PROMPT = """
@@ -111,56 +111,48 @@ Return only a JSON object of this form:
   "description": "<clean description>",
   "time": "<ISO 8601 UTC timestamp>"
 }
+
+If a field has a single value it is still an array where the specification says array.
+If you cannot confidently match a value, use "null" or an empty array as appropriate.
+
+Do not output any explanation. Only output the JSON object.
 """
 
 # ---------------------
-# CLIENT SETUP
+# CLIENT
 # ---------------------
-
 def gemini_available() -> bool:
     return bool(os.environ.get("GOOGLE_API_KEY"))
 
-# Single shared client
 client = genai.Client(api_key=os.environ.get("GOOGLE_API_KEY"))
 
 def create_operator_chat():
     return client.chats.create(
         model="gemini-2.5-flash",
         history=[
-            types.Content(
-                role="system",
-                parts=[types.Part.from_text(GENERATOR_SYSTEM_PROMPT)]
-            )
-        ]
+            types.Content(role="system", parts=[types.Part.from_text(GENERATOR_SYSTEM_PROMPT)])
+        ],
     )
 
 def create_user_chat():
     return client.chats.create(
         model="gemini-2.5-flash",
         history=[
-            types.Content(
-                role="system",
-                parts=[types.Part.from_text(USER_SIDE_GENERATOR_PROMPT)]
-            )
-        ]
+            types.Content(role="system", parts=[types.Part.from_text(USER_SIDE_GENERATOR_PROMPT)])
+        ],
     )
 
 # ---------------------
-# UTILITIES
+# HELPERS
 # ---------------------
-
 def is_structured_record(text: str) -> bool:
-    """Check if the output is a JSON-like structured record"""
     return text.strip().startswith("{") and text.strip().endswith("}")
 
 def extract_field(text: str, field: str) -> str:
-    """Extract a single field from structured text"""
-    pattern = rf"{field}\s*:\s*(.*)"
-    m = re.search(pattern, text)
+    m = re.search(rf"{field}\s*:\s*(.*)", text)
     return m.group(1).strip() if m else ""
 
 def standardize_description(text: str, tags: dict):
-    """Attempt to parse standardized JSON from text"""
     try:
         data = json.loads(text)
     except Exception:
@@ -170,19 +162,20 @@ def standardize_description(text: str, tags: dict):
             "item_category": "null",
             "item_type": [],
             "description": text,
-            "time": datetime.now(timezone.utc).isoformat()
+            "time": datetime.now(timezone.utc).isoformat(),
         }
-    # Ensure list fields are always lists
-    for key in ["subway_location","color","item_type"]:
-        if key in data and isinstance(data[key], str):
-            data[key] = [data[key]]
-        elif key not in data:
-            data[key] = []
-    # Ensure mandatory fields exist
+
+    # Ensure list fields
+    for k in ["subway_location", "color", "item_type"]:
+        if k in data and isinstance(data[k], str):
+            data[k] = [data[k]]
+        elif k not in data:
+            data[k] = []
+
     if "item_category" not in data:
         data["item_category"] = "null"
     if "description" not in data:
-        data["description"] = ""
+        data["description"] = text
     if "time" not in data:
         data["time"] = datetime.now(timezone.utc).isoformat()
     return data
